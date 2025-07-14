@@ -1,10 +1,10 @@
 name: 'Terraform CI'
 
 on:
-  pull_request:
+  push:
     branches:
       - main
-    types: [opened, synchronize, reopened]
+    # types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
