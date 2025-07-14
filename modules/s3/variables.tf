@@ -14,3 +14,10 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+
+variable "unused_demo_variable" { # This new variable is intentionally unused
+  description = "This variable is intentionally unused for TFLint demo"
+  type        = string
+  default     = "tflint-test"
+}
