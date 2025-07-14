@@ -1,10 +1,11 @@
+# .github/workflows/ci.yml
 name: 'Terraform CI'
 
 on:
   pull_request:
     branches:
       - main
-  types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
@@ -52,7 +53,6 @@ jobs:
           commenter_type: tflint
           commenter_input: ${{ steps.tflint.outputs.stdout }}
           commenter_exitcode: ${{ steps.tflint.outputs.exitcode }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 'Terraform Format Check'
         id: fmt
@@ -66,7 +66,6 @@ jobs:
           commenter_type: fmt
           commenter_input: ${{ steps.fmt.outputs.stdout }}
           commenter_exitcode: ${{ steps.fmt.outputs.exitcode }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 'Terraform Validate'
         id: validate
@@ -80,14 +79,12 @@ jobs:
           commenter_type: validate
           commenter_input: ${{ steps.validate.outputs.stdout }}
           commenter_exitcode: ${{ steps.validate.outputs.exitcode }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 'Check for Step Failures'
         if: steps.init.outcome == 'failure' || steps.tflint.outcome == 'failure' || steps.fmt.outcome == 'failure' || steps.validate.outcome == 'failure'
         run: |
           echo "One or more validation steps failed. The PR cannot be merged."
           exit 1
-
   security-scan:
     name: 'Security Scan'
     runs-on: ubuntu-latest
@@ -154,7 +151,6 @@ jobs:
           commenter_type: plan
           commenter_input: ${{ steps.plan.outputs.stdout }}
           commenter_exitcode: ${{ steps.plan.outputs.exitcode }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 'Upload Plan Artifact'
         if: steps.plan.outcome == 'success'
@@ -171,7 +167,6 @@ jobs:
         run: |
           echo "Terraform plan failed. See the plan comment for details."
           exit 1
-
   build-artifact:
     name: 'Build Dev Artifact'
     runs-on: ubuntu-latest
@@ -182,19 +177,17 @@ jobs:
 
       - name: 'Generate artifact zip file'
         run: |
-          zip -r dev-artifact-${{ github.sha }}.zip *.tf modules/
-
+          zip -r dev-artifact-pr-${{ github.event.pull_request.number }}.zip *.tf modules/
       - name: 'Upload Dev Artifact'
         uses: actions/upload-artifact@v4
         with:
-          name: dev-artifact-${{ github.sha }}
-          path: dev-artifact-${{ github.sha }}.zip
+          name: dev-artifact-pr-${{ github.event.pull_request.number }}
+          path: dev-artifact-pr-${{ github.event.pull_request.number }}.zip
           retention-days: 7
 
       - name: 'Comment Artifact Info'
         uses: mshick/add-pr-comment@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
           message: |
             ## CI Pipeline Completed Successfully
             
@@ -203,10 +196,9 @@ jobs:
             **Terraform Plan**: Passed
             **Build Artifact**: Completed
             
-            **Dev Artifact**: `dev-artifact-${{ github.sha }}.zip`
+            **Dev Artifact**: `dev-artifact-pr-${{ github.event.pull_request.number }}.zip`
             
             Ready for review and merge!
-
       - name: 'Update Step Summary'
         run: |
           echo "## CI Pipeline Completed Successfully" >> $GITHUB_STEP_SUMMARY
