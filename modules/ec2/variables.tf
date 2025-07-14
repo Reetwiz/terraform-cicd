@@ -27,6 +27,6 @@ variable "vpc_id" {
 
 variable "tags" {
   description = "map of tags to assign to instnace"
-  type = map(string)
+  type        = map(string)
   default     = {}
 }
