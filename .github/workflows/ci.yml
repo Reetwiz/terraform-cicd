@@ -1,10 +1,10 @@
 name: 'Terraform CI'
 
 on:
-  push:
+  pull_request:
     branches:
       - main
-    # types: [opened, synchronize, reopened]
+  types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
@@ -182,13 +182,13 @@ jobs:
 
       - name: 'Generate artifact zip file'
         run: |
-          zip -r dev-artifact-pr-${{ github.event.pull_request.number }}.zip *.tf modules/
+          zip -r dev-artifact-${{ github.sha }}.zip *.tf modules/
 
       - name: 'Upload Dev Artifact'
         uses: actions/upload-artifact@v4
         with:
-          name: dev-artifact-pr-${{ github.event.pull_request.number }}
-          path: dev-artifact-pr-${{ github.event.pull_request.number }}.zip
+          name: dev-artifact-${{ github.sha }}
+          path: dev-artifact-${{ github.sha }}.zip
           retention-days: 7
 
       - name: 'Comment Artifact Info'
@@ -203,7 +203,7 @@ jobs:
             **Terraform Plan**: Passed
             **Build Artifact**: Completed
             
-            **Dev Artifact**: `dev-artifact-pr-${{ github.event.pull_request.number }}.zip`
+            **Dev Artifact**: `dev-artifact-${{ github.sha }}.zip`
             
             Ready for review and merge!
 
