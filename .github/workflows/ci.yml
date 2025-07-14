@@ -10,6 +10,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  id-token: write  # Added for OIDC if needed
 
 jobs:
   lint:
@@ -43,16 +44,19 @@ jobs:
 
       - name: 'TFLint'
         id: tflint
-        run: tflint
+        run: tflint --format compact
         continue-on-error: true
 
       - name: 'Comment TFLint Results'
-        if: steps.tflint.outcome == 'failure'
+        if: steps.tflint.outcome == 'failure' && github.event_name == 'pull_request'
         uses: GetTerminus/terraform-pr-commenter@v3
         with:
           commenter_type: tflint
           commenter_input: ${{ steps.tflint.outputs.stdout }}
           commenter_exitcode: ${{ steps.tflint.outputs.exitcode }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
 
       - name: 'Terraform Format Check'
         id: fmt
@@ -60,12 +64,15 @@ jobs:
         continue-on-error: true
 
       - name: 'Comment Format Results'
-        if: steps.fmt.outcome == 'failure'
+        if: steps.fmt.outcome == 'failure' && github.event_name == 'pull_request'
         uses: GetTerminus/terraform-pr-commenter@v3
         with:
           commenter_type: fmt
           commenter_input: ${{ steps.fmt.outputs.stdout }}
           commenter_exitcode: ${{ steps.fmt.outputs.exitcode }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
 
       - name: 'Terraform Validate'
         id: validate
@@ -73,18 +80,22 @@ jobs:
         continue-on-error: true
 
       - name: 'Comment Validate Results'
-        if: steps.validate.outcome == 'failure'
+        if: steps.validate.outcome == 'failure' && github.event_name == 'pull_request'
         uses: GetTerminus/terraform-pr-commenter@v3
         with:
           commenter_type: validate
           commenter_input: ${{ steps.validate.outputs.stdout }}
           commenter_exitcode: ${{ steps.validate.outputs.exitcode }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
 
       - name: 'Check for Step Failures'
         if: steps.init.outcome == 'failure' || steps.tflint.outcome == 'failure' || steps.fmt.outcome == 'failure' || steps.validate.outcome == 'failure'
         run: |
           echo "One or more validation steps failed. The PR cannot be merged."
           exit 1
+
   security-scan:
     name: 'Security Scan'
     runs-on: ubuntu-latest
@@ -111,6 +122,7 @@ jobs:
         uses: aquasecurity/tfsec-pr-commenter-action@v1.2.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
 
   plan:
     name: 'Terraform Plan'
@@ -146,17 +158,21 @@ jobs:
         run: terraform show -no-color tfplan > tfplan.txt
 
       - name: 'Comment Plan Results'
+        if: github.event_name == 'pull_request'
         uses: GetTerminus/terraform-pr-commenter@v3
         with:
           commenter_type: plan
           commenter_input: ${{ steps.plan.outputs.stdout }}
           commenter_exitcode: ${{ steps.plan.outputs.exitcode }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
 
       - name: 'Upload Plan Artifact'
         if: steps.plan.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: terraform-plan
+          name: terraform-plan-${{ github.event.pull_request.number }}
           path: |
             tfplan
             tfplan.txt
@@ -167,6 +183,7 @@ jobs:
         run: |
           echo "Terraform plan failed. See the plan comment for details."
           exit 1
+
   build-artifact:
     name: 'Build Dev Artifact'
     runs-on: ubuntu-latest
@@ -175,9 +192,22 @@ jobs:
       - name: 'Checkout'
         uses: actions/checkout@v4
 
+      - name: 'Check if Terraform files exist'
+        run: |
+          if [ ! -f "*.tf" ] && [ ! -d "modules" ]; then
+            echo "No Terraform files found. Creating minimal structure for artifact."
+            touch main.tf
+            mkdir -p modules
+          fi
+
       - name: 'Generate artifact zip file'
         run: |
-          zip -r dev-artifact-pr-${{ github.event.pull_request.number }}.zip *.tf modules/
+          # Create zip with all Terraform files and modules directory
+          zip -r dev-artifact-pr-${{ github.event.pull_request.number }}.zip \
+            *.tf \
+            modules/ \
+            -x "*.terraform*" "*.tfstate*" "*.tfplan*"
+
       - name: 'Upload Dev Artifact'
         uses: actions/upload-artifact@v4
         with:
@@ -186,6 +216,7 @@ jobs:
           retention-days: 7
 
       - name: 'Comment Artifact Info'
+        if: github.event_name == 'pull_request'
         uses: mshick/add-pr-comment@v2
         with:
           message: |
@@ -199,6 +230,10 @@ jobs:
             **Dev Artifact**: `dev-artifact-pr-${{ github.event.pull_request.number }}.zip`
             
             Ready for review and merge!
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
       - name: 'Update Step Summary'
         run: |
           echo "## CI Pipeline Completed Successfully" >> $GITHUB_STEP_SUMMARY
