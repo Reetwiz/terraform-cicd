@@ -1,19 +1,16 @@
 # .github/workflows/ci.yml
 name: 'Terraform CI'
 
-
 on:
   pull_request:
     branches:
       - main
     types: [opened, synchronize, reopened]
 
-
 permissions:
   contents: read
   pull-requests: write
   id-token: write  # Added for OIDC if needed
-
 
 jobs:
   lint:
@@ -23,7 +20,6 @@ jobs:
       - name: 'Checkout'
         uses: actions/checkout@v4
 
-
       - name: 'Configure AWS Credentials'
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -31,85 +27,88 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-
       - name: 'Setup Terraform'
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.8.3
 
+      - name: 'Cache TFLint plugins'
+        uses: actions/cache@v4
+        with:
+          path: ~/.tflint.d/plugins
+          key: ubuntu-latest-tflint-${{ hashFiles('.tflint.hcl') }}
 
       - name: 'Setup TFLint'
         uses: terraform-linters/setup-tflint@v4
         with:
-          tflint_version: latest
-
+          tflint_version: v0.52.0
+          tflint_wrapper: "true"
 
       - name: 'Terraform Init'
         id: init
         run: terraform init
         continue-on-error: true
 
+      - name: 'TFLint Init'
+        run: |
+          tflint --version
+          tflint --init
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 'TFLint'
+      - name: 'TFLint Run'
         id: tflint
         run: tflint --format compact
         continue-on-error: true
 
-
       - name: 'Comment TFLint Results'
-        if: always() && steps.tflint.outcome == 'failure'
+        if: always() && (steps.tflint.outcome == 'success' || steps.tflint.outcome == 'failure')
         uses: GetTerminus/terraform-pr-commenter@v3
         with:
           commenter_type: tflint
-          commenter_input: ${{ steps.tflint.outputs.stdout }}
+          commenter_input: ${{ format('{0}{1}', steps.tflint.outputs.stdout, steps.tflint.outputs.stderr) }}
           commenter_exitcode: ${{ steps.tflint.outputs.exitcode }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
-
 
       - name: 'Terraform Format Check'
         id: fmt
         run: terraform fmt -check -diff
         continue-on-error: true
 
-
       - name: 'Comment Format Results'
-        if: always() && steps.fmt.outcome == 'failure'
+        if: always() && (steps.fmt.outcome == 'success' || steps.fmt.outcome == 'failure')
         uses: GetTerminus/terraform-pr-commenter@v3
         with:
           commenter_type: fmt
-          commenter_input: ${{ steps.fmt.outputs.stdout }}
+          commenter_input: ${{ format('{0}{1}', steps.fmt.outputs.stdout, steps.fmt.outputs.stderr) }}
           commenter_exitcode: ${{ steps.fmt.outputs.exitcode }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
-
 
       - name: 'Terraform Validate'
         id: validate
         run: terraform validate
         continue-on-error: true
 
-
       - name: 'Comment Validate Results'
-        if: always() && steps.validate.outcome == 'failure'
+        if: always() && (steps.validate.outcome == 'success' || steps.validate.outcome == 'failure')
         uses: GetTerminus/terraform-pr-commenter@v3
         with:
           commenter_type: validate
-          commenter_input: ${{ steps.validate.outputs.stdout }}
+          commenter_input: ${{ format('{0}{1}', steps.validate.outputs.stdout, steps.validate.outputs.stderr) }}
           commenter_exitcode: ${{ steps.validate.outputs.exitcode }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
-
 
       - name: 'Check for Step Failures'
         if: steps.init.outcome == 'failure' || steps.tflint.outcome == 'failure' || steps.fmt.outcome == 'failure' || steps.validate.outcome == 'failure'
         run: |
           echo "One or more validation steps failed. The PR cannot be merged."
           exit 1
-
 
   security-scan:
     name: 'Security Scan'
@@ -118,7 +117,6 @@ jobs:
       - name: 'Checkout'
         uses: actions/checkout@v4
 
-
       - name: 'Configure AWS Credentials'
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -126,23 +124,19 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-
       - name: 'Setup Terraform'
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.8.3
 
-
       - name: 'Terraform Init'
         run: terraform init
-
 
       - name: 'Run tfsec with PR Commenter'
         uses: aquasecurity/tfsec-pr-commenter-action@v1.2.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
-
 
   plan:
     name: 'Terraform Plan'
@@ -152,7 +146,6 @@ jobs:
       - name: 'Checkout'
         uses: actions/checkout@v4
 
-
       - name: 'Configure AWS Credentials'
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -160,40 +153,34 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-
       - name: 'Setup Terraform'
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.8.3
 
-
       - name: 'Terraform Init'
         id: init
         run: terraform init
-
 
       - name: 'Terraform Plan'
         id: plan
         run: terraform plan -no-color -out=tfplan
         continue-on-error: true
 
-
       - name: 'Convert plan to text'
         if: steps.plan.outcome == 'success'
         run: terraform show -no-color tfplan > tfplan.txt
-
 
       - name: 'Comment Plan Results'
         if: always()
         uses: GetTerminus/terraform-pr-commenter@v3
         with:
           commenter_type: plan
-          commenter_input: ${{ steps.plan.outputs.stdout }}
+          commenter_input: ${{ format('{0}{1}', steps.plan.outputs.stdout, steps.plan.outputs.stderr) }}
           commenter_exitcode: ${{ steps.plan.outputs.exitcode }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
-
 
       - name: 'Upload Plan Artifact'
         if: steps.plan.outcome == 'success'
@@ -205,13 +192,11 @@ jobs:
             tfplan.txt
           retention-days: 30
 
-
       - name: 'Terraform Plan Status'
         if: steps.plan.outcome != 'success'
         run: |
           echo "Terraform plan failed. See the plan comment for details."
           exit 1
-
 
   build-artifact:
     name: 'Build Dev Artifact'
@@ -221,7 +206,6 @@ jobs:
       - name: 'Checkout'
         uses: actions/checkout@v4
 
-
       - name: 'Check if Terraform files exist'
         run: |
           if [ ! -f "*.tf" ] && [ ! -d "modules" ]; then
@@ -229,7 +213,6 @@ jobs:
             touch main.tf
             mkdir -p modules
           fi
-
 
       - name: 'Generate artifact zip file'
         run: |
@@ -239,14 +222,12 @@ jobs:
             modules/ \
             -x "*.terraform*" "*.tfstate*" "*.tfplan*"
 
-
       - name: 'Upload Dev Artifact'
         uses: actions/upload-artifact@v4
         with:
           name: dev-artifact-pr-${{ github.event.pull_request.number }}
           path: dev-artifact-pr-${{ github.event.pull_request.number }}.zip
           retention-days: 7
-
 
       - name: 'Comment Artifact Info'
         if: always()
@@ -266,7 +247,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
-
 
       - name: 'Update Step Summary'
         run: |
