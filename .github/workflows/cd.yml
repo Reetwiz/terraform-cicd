@@ -27,64 +27,57 @@ jobs:
           wget -q -O /usr/local/bin/semver https://raw.githubusercontent.com/fsaintjacques/semver-tool/master/src/semver
           chmod +x /usr/local/bin/semver
 
-      - name: 'Get and Calculate New Version'
+      - name: 'Get Version'
         id: get_version
         run: |
           last_version=$(git tag --sort=-version:refname | head -n1)
           if [ -z "$last_version" ]; then
-            last_version="v0.0.0"
-          fi
-          last_version_no_v=${last_version#v}
-          commit_message="${{ github.event.head_commit.message }}"
-          if [[ "$commit_message" =~ ^major || "$commit_message" =~ BREAKING[ -]CHANGE: ]]; then
-            new_version=$(semver bump major $last_version_no_v)
-          elif [[ "$commit_message" =~ ^feat ]]; then
-            new_version=$(semver bump minor $last_version_no_v)
+            new_version="1.0.0"
+          elif [[ "${{ github.event.head_commit.message }}" =~ ^major ]]; then
+            new_version=$(semver bump major ${last_version#v})
+          elif [[ "${{ github.event.head_commit.message }}" =~ ^feat ]]; then
+            new_version=$(semver bump minor ${last_version#v})
           else
-            new_version=$(semver bump patch $last_version_no_v)
+            new_version=$(semver bump patch ${last_version#v})
           fi
           echo "new_version=v$new_version" >> $GITHUB_OUTPUT
-          echo "New version calculated: v$new_version"
+          echo "New version: v$new_version"
 
-      - name: 'Build Production Artifact'
+      - name: 'Build'
         run: zip -r prod-release-artifact.zip *.tf modules/
           
-      - name: 'Create GitHub Release and Tag'
+      - name: 'Release'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.get_version.outputs.new_version }}
           name: "Release ${{ steps.get_version.outputs.new_version }}"
-          body: "Automated release based on merge to main."
           files: "prod-release-artifact.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  publish-to-s3:
-    name: 'Publish Artifact to S3'
-    runs-on: ubuntu-latest
-    needs: create-release
-    environment:
-      name: production
-    
-    steps:
-      - name: 'Configure AWS Credentials'
+      - name: 'Upload Artifact'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      - name: 'Download Release Asset'
-        uses: dsaltares/fetch-gh-release-asset@master
-        with:
-          repo: ${{ github.repository }}
-          version: "tags/${{ needs.create-release.outputs.release_version }}"
-          file: 'prod-release-artifact.zip'
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: 'Push to S3'
+        run: aws s3 cp prod-release-artifact.zip s3://reetwiz-artifact/releases/${{ steps.get_version.outputs.new_version }}/prod-release-artifact.zip
 
-      - name: 'Upload Artifact to S3'
-        uses: aws-actions/aws-s3-upload@v2
+      - name: 'Comment Artifact'
+        uses: mschilde/add-pr-comment@v2
         with:
-          aws-bucket-name: 'reetwiz-artifact'
-          source: 'prod-release-artifact.zip'
-          destination: 'releases/${{ needs.create-release.outputs.release_version }}/prod-release-artifact.zip'
+          message: |
+            **Release Created**: ${{ steps.get_version.outputs.new_version }}
+            **Artifact**: `prod-release-artifact.zip`
+            **S3 Location**: `s3://reetwiz-artifact/releases/${{ steps.get_version.outputs.new_version }}/`
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 'Summary'
+        run: |
+          echo "## Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ steps.get_version.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact**: prod-release-artifact.zip" >> $GITHUB_STEP_SUMMARY
+          echo "- **S3 Path**: s3://reetwiz-artifact/releases/${{ steps.get_version.outputs.new_version }}/" >> $GITHUB_STEP_SUMMARY
