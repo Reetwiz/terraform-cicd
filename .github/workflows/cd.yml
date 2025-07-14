@@ -66,7 +66,7 @@ jobs:
         run: aws s3 cp prod-release-artifact.zip s3://reetwiz-artifact/releases/${{ steps.get_version.outputs.new_version }}/prod-release-artifact.zip
 
       - name: 'Comment Artifact'
-        uses: mschilde/add-pr-comment@v2
+        uses: mshick/add-pr-comment@v2
         with:
           message: |
             **Release Created**: ${{ steps.get_version.outputs.new_version }}
