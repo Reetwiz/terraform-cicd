@@ -6,90 +6,65 @@ on:
     branches:
       - main
 
-# These permissions are required for creating releases/tags.
 permissions:
   contents: write
 
 jobs:
-  #############################################################
-  # Job 1: CREATE RELEASE (Slide 12)
-  # Calculates a new version, tags it, and creates a release artifact.
-  #############################################################
   create-release:
     name: 'Create Release Artifact'
     runs-on: ubuntu-latest
     outputs:
-      # This output will be used by the deploy job to know which version to download
       release_version: ${{ steps.get_version.outputs.new_version }}
       
     steps:
       - name: 'Checkout'
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Required to analyze commit history for versioning
+          fetch-depth: 0
 
       - name: 'Install semver tool'
         run: |
-          wget -O /usr/local/bin/semver https://raw.githubusercontent.com/fsaintjacques/semver-tool/master/src/semver
+          wget -q -O /usr/local/bin/semver https://raw.githubusercontent.com/fsaintjacques/semver-tool/master/src/semver
           chmod +x /usr/local/bin/semver
 
-      - name: 'Get version'
+      - name: 'Get and Calculate New Version'
         id: get_version
         run: |
-          # Get the last version from git tags
           last_version=$(git tag --sort=-version:refname | head -n1)
-          
           if [ -z "$last_version" ]; then
-            new_version="1.0.0"
-          else
-            # Remove 'v' prefix if present
-            last_version=${last_version#v}
-            
-            # Determine version bump based on commit message
-            commit_message="${{ github.event.head_commit.message }}"
-            if [[ "$commit_message" =~ ^major ]]; then
-              new_version=$(semver bump major $last_version)
-            elif [[ "$commit_message" =~ ^feat ]]; then
-              new_version=$(semver bump minor $last_version)
-            else
-              new_version=$(semver bump patch $last_version)
-            fi
+            last_version="v0.0.0"
           fi
-          
+          last_version_no_v=${last_version#v}
+          commit_message="${{ github.event.head_commit.message }}"
+          if [[ "$commit_message" =~ ^major || "$commit_message" =~ BREAKING[ -]CHANGE: ]]; then
+            new_version=$(semver bump major $last_version_no_v)
+          elif [[ "$commit_message" =~ ^feat ]]; then
+            new_version=$(semver bump minor $last_version_no_v)
+          else
+            new_version=$(semver bump patch $last_version_no_v)
+          fi
           echo "new_version=v$new_version" >> $GITHUB_OUTPUT
-          echo "New version: v$new_version"
+          echo "New version calculated: v$new_version"
 
       - name: 'Build Production Artifact'
-        run: |
-          zip -r prod-release-artifact.zip *.tf modules/ locals.tf main.tf outputs.tf variables.tf
+        run: zip -r prod-release-artifact.zip *.tf modules/
           
-      - name: 'Push tag and create release'
-        uses: mathieudutour/github-tag-action@v6.2
+      - name: 'Create GitHub Release and Tag'
+        uses: softprops/action-gh-release@v2
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          custom_tag: ${{ steps.get_version.outputs.new_version }}
-          tag_prefix: ""
-
-      - name: 'Create GitHub Release'
-        uses: marvinpinto/action-automatic-releases@latest
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          automatic_release_tag: ${{ steps.get_version.outputs.new_version }}
-          prerelease: false
-          title: "Release ${{ steps.get_version.outputs.new_version }}"
+          tag_name: ${{ steps.get_version.outputs.new_version }}
+          name: "Release ${{ steps.get_version.outputs.new_version }}"
+          body: "Automated release based on merge to main."
           files: "prod-release-artifact.zip"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  #############################################################
-  # Job 2: DEPLOY TO PRODUCTION (Slide 13)
-  # Downloads the release artifact and applies it.
-  #############################################################
-  deploy-to-prod:
-    name: 'Deploy to Production'
+  publish-to-s3:
+    name: 'Publish Artifact to S3'
     runs-on: ubuntu-latest
-    needs: create-release # This job depends on the release being successfully created
+    needs: create-release
     environment:
       name: production
-      url: 'https://us-east-1.console.aws.amazon.com/ec2/v2/home?region=us-east-1#Instances:'
     
     steps:
       - name: 'Configure AWS Credentials'
@@ -103,24 +78,13 @@ jobs:
         uses: dsaltares/fetch-gh-release-asset@master
         with:
           repo: ${{ github.repository }}
-          version: ${{ needs.create-release.outputs.release_version }}
+          version: "tags/${{ needs.create-release.outputs.release_version }}"
           file: 'prod-release-artifact.zip'
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 'Extract Artifact'
-        run: unzip prod-release-artifact.zip
-
-      - name: 'Setup Terraform'
-        uses: hashicorp/setup-terraform@v3
+      - name: 'Upload Artifact to S3'
+        uses: aws-actions/aws-s3-upload@v2
         with:
-          terraform_version: 1.8.3
-
-      - name: 'Terraform Init (Prod)'
-        run: terraform init
-
-      - name: 'Terraform Plan (Prod)'
-        run: terraform plan -no-color
-
-      - name: 'Terraform Apply (Prod)'
-        id: apply
-        run: terraform apply -auto-approve
+          aws-bucket-name: 'reetwiz-artifact'
+          source: 'prod-release-artifact.zip'
+          destination: 'releases/${{ needs.create-release.outputs.release_version }}/prod-release-artifact.zip'
