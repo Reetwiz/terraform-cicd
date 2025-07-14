@@ -1,111 +1,34 @@
-name: 'Terraform CI'
+# .github/workflows/destroy.yml
+name: 'Terraform Destroy'
 
 on:
-  pull_request:
-    branches:
-      - main
-    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'type "destroy"'
+        required: true
+        type: string
 
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
-  lint:
-    name: 'Lint and Validate'
+  destroy-infrastructure:
+    name: 'Destroy Infrastructure'
     runs-on: ubuntu-latest
+
     steps:
-      - name: 'Checkout'
-        uses: actions/checkout@v4
-
-      - name: 'Configure AWS Credentials'
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
-
-      - name: 'Setup Terraform'
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.8.3
-
-      - name: 'Cache TFLint plugins'
-        uses: actions/cache@v4
-        with:
-          path: ~/.tflint.d/plugins
-          key: ubuntu-latest-tflint-${{ hashFiles('.tflint.hcl') }}
-
-      - name: 'Setup TFLint'
-        uses: terraform-linters/setup-tflint@v4
-        with:
-          tflint_version: v0.52.0
-          tflint_wrapper: "true"
-
-      - name: 'Terraform Init'
-        id: init
-        run: terraform init
-        continue-on-error: true
-
-      - name: 'Init TFLint'
-        run: tflint --init
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-
-      - name: 'TFLint'
-        id: tflint
-        run: tflint -f compact
-        continue-on-error: true
-
-      - name: 'Comment TFLint Results'
-        if: steps.tflint.outcome == 'failure'
-        uses: GetTerminus/terraform-pr-commenter@v3
-        with:
-          commenter_type: tflint
-          commenter_input: ${{ steps.tflint.outputs.stdout }}
-          commenter_exitcode: ${{ steps.tflint.outputs.exitcode }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 'Terraform Format Check'
-        id: fmt
-        run: terraform fmt -check -diff
-        continue-on-error: true
-
-      - name: 'Comment Format Results'
-        if: steps.fmt.outcome == 'failure'
-        uses: GetTerminus/terraform-pr-commenter@v3
-        with:
-          commenter_type: fmt
-          commenter_input: ${{ steps.fmt.outputs.stdout }}
-          commenter_exitcode: ${{ steps.fmt.outputs.exitcode }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 'Terraform Validate'
-        id: validate
-        run: terraform validate
-        continue-on-error: true
-
-      - name: 'Comment Validate Results'
-        if: steps.validate.outcome == 'failure'
-        uses: GetTerminus/terraform-pr-commenter@v3
-        with:
-          commenter_type: validate
-          commenter_input: ${{ steps.validate.outputs.stdout }}
-          commenter_exitcode: ${{ steps.validate.outputs.exitcode }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 'Check for Step Failures'
-        if: steps.init.outcome == 'failure' || steps.tflint.outcome == 'failure' || steps.fmt.outcome == 'failure' || steps.validate.outcome == 'failure'
+      - name: 'Verify Confirmation'
         run: |
-          echo "One or more validation steps failed. The PR cannot be merged."
-          exit 1
+          if [[ "${{ github.event.inputs.confirmation }}" != "destroy" ]]; then
+            echo "Confirmation text did not match 'destroy'. Aborting."
+            exit 1
+          fi
 
-  security-scan:
-    name: 'Security Scan'
-    runs-on: ubuntu-latest
-    steps:
-      - name: 'Checkout'
+      - name: 'Checkout main branch'
         uses: actions/checkout@v4
+        with:
+          ref: 'main'
 
       - name: 'Configure AWS Credentials'
         uses: aws-actions/configure-aws-credentials@v4
@@ -122,112 +45,6 @@ jobs:
       - name: 'Terraform Init'
         run: terraform init
 
-      - name: 'Run tfsec with PR Commenter'
-        uses: aquasecurity/tfsec-pr-commenter-action@v1.2.0
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-
-  plan:
-    name: 'Terraform Plan'
-    runs-on: ubuntu-latest
-    needs: [lint, security-scan]
-    steps:
-      - name: 'Checkout'
-        uses: actions/checkout@v4
-
-      - name: 'Configure AWS Credentials'
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
-
-      - name: 'Setup Terraform'
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.8.3
-
-      - name: 'Terraform Init'
-        id: init
-        run: terraform init
-
-      - name: 'Terraform Plan'
-        id: plan
-        run: terraform plan -no-color -out=tfplan
-        continue-on-error: true
-
-      - name: 'Convert plan to text'
-        if: steps.plan.outcome == 'success'
-        run: terraform show -no-color tfplan > tfplan.txt
-
-      - name: 'Comment Plan Results'
-        uses: GetTerminus/terraform-pr-commenter@v3
-        with:
-          commenter_type: plan
-          commenter_input: ${{ steps.plan.outputs.stdout }}
-          commenter_exitcode: ${{ steps.plan.outputs.exitcode }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 'Upload Plan Artifact'
-        if: steps.plan.outcome == 'success'
-        uses: actions/upload-artifact@v4
-        with:
-          name: terraform-plan
-          path: |
-            tfplan
-            tfplan.txt
-          retention-days: 30
-
-      - name: 'Terraform Plan Status'
-        if: steps.plan.outcome != 'success'
-        run: |
-          echo "Terraform plan failed. See the plan comment for details."
-          exit 1
-
-  build-artifact:
-    name: 'Build Dev Artifact'
-    runs-on: ubuntu-latest
-    needs: [plan]
-    steps:
-      - name: 'Checkout'
-        uses: actions/checkout@v4
-
-      - name: 'Generate artifact zip file'
-        run: |
-          zip -r dev-artifact-${{ github.sha }}.zip *.tf modules/
-
-      - name: 'Upload Dev Artifact'
-        uses: actions/upload-artifact@v4
-        with:
-          name: dev-artifact-${{ github.sha }}
-          path: dev-artifact-${{ github.sha }}.zip
-          retention-days: 7
-
-      - name: 'Comment Artifact Info'
-        uses: mshick/add-pr-comment@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          message: |
-            ## CI Pipeline Completed Successfully
-            
-            **Lint & Validate**: Passed
-            **Security Scan**: Passed  
-            **Terraform Plan**: Passed
-            **Build Artifact**: Completed
-            
-            **Dev Artifact**: `dev-artifact-${{ github.sha }}.zip`
-            
-            Ready for review and merge!
-
-      - name: 'Update Step Summary'
-        run: |
-          echo "## CI Pipeline Completed Successfully" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Step | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Lint & Validate | Passed |" >> $GITHUB_STEP_SUMMARY
-          echo "| Security Scan | Passed |" >> $GITHUB_STEP_SUMMARY
-          echo "| Terraform Plan | Passed |" >> $GITHUB_STEP_SUMMARY
-          echo "| Build Artifact | Passed |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Artifact**: dev-artifact-pr-${{ github.event.pull_request.number }}.zip" >> $GITHUB_STEP_SUMMARY
+      - name: 'Terraform Destroy'
+        if: github.event.inputs.confirmation == 'destroy'
+        run: terraform destroy -auto-approve
