@@ -10,8 +10,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
-  id-token: write  # Added for OIDC if needed
-
+  id-token: write  # Required for OIDC authentication with AWS
 jobs:
   lint:
     name: 'Lint and Validate'
@@ -20,11 +19,10 @@ jobs:
       - name: 'Checkout'
         uses: actions/checkout@v4
 
-      - name: 'Configure AWS Credentials'
+      - name: 'Configure AWS Credentials with OIDC' 
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: arn:aws:iam::702865854817:role/reetwiz-tf-oidc
           aws-region: us-east-1
 
       - name: 'Setup Terraform'
@@ -103,11 +101,10 @@ jobs:
       - name: 'Checkout'
         uses: actions/checkout@v4
 
-      - name: 'Configure AWS Credentials'
+      - name: 'Configure AWS Credentials with OIDC'
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: arn:aws:iam::702865854817:role/reetwiz-tf-oidc 
           aws-region: us-east-1
 
       - name: 'Setup Terraform'
@@ -132,11 +129,10 @@ jobs:
       - name: 'Checkout'
         uses: actions/checkout@v4
 
-      - name: 'Configure AWS Credentials'
+      - name: 'Configure AWS Credentials with OIDC'
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: arn:aws:iam::702865854817:role/reetwiz-tf-oidc 
           aws-region: us-east-1
 
       - name: 'Setup Terraform'
@@ -191,6 +187,12 @@ jobs:
     steps:
       - name: 'Checkout'
         uses: actions/checkout@v4
+
+      - name: 'Configure AWS Credentials with OIDC'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::702865854817:role/reetwiz-tf-oidc 
+          aws-region: us-east-1
 
       - name: 'Check if Terraform files exist'
         run: |

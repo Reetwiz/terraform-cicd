@@ -5,12 +5,13 @@ on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: 'type "destroy"'
+        description: 'type "destroy" below'
         required: true
         type: string
 
 permissions:
   contents: read
+  id-token: write 
 
 jobs:
   destroy-infrastructure:
@@ -30,11 +31,10 @@ jobs:
         with:
           ref: 'main'
 
-      - name: 'Configure AWS Credentials'
+      - name: 'Configure AWS Credentials with OIDC' 
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: arn:aws:iam::702865854817:role/reetwiz-tf-oidc 
           aws-region: us-east-1
 
       - name: 'Setup Terraform'
