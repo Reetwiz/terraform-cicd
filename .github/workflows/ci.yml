@@ -48,7 +48,7 @@ jobs:
         continue-on-error: true
 
       - name: 'Comment TFLint Results'
-        if: steps.tflint.outcome == 'failure' && github.event_name == 'pull_request'
+        if: always() && steps.tflint.outcome == 'failure'
         uses: GetTerminus/terraform-pr-commenter@v3
         with:
           commenter_type: tflint
@@ -64,7 +64,7 @@ jobs:
         continue-on-error: true
 
       - name: 'Comment Format Results'
-        if: steps.fmt.outcome == 'failure' && github.event_name == 'pull_request'
+        if: always() && steps.fmt.outcome == 'failure'
         uses: GetTerminus/terraform-pr-commenter@v3
         with:
           commenter_type: fmt
@@ -80,7 +80,7 @@ jobs:
         continue-on-error: true
 
       - name: 'Comment Validate Results'
-        if: steps.validate.outcome == 'failure' && github.event_name == 'pull_request'
+        if: always() && steps.validate.outcome == 'failure'
         uses: GetTerminus/terraform-pr-commenter@v3
         with:
           commenter_type: validate
@@ -158,7 +158,7 @@ jobs:
         run: terraform show -no-color tfplan > tfplan.txt
 
       - name: 'Comment Plan Results'
-        if: github.event_name == 'pull_request'
+        if: always()
         uses: GetTerminus/terraform-pr-commenter@v3
         with:
           commenter_type: plan
@@ -216,7 +216,7 @@ jobs:
           retention-days: 7
 
       - name: 'Comment Artifact Info'
-        if: github.event_name == 'pull_request'
+        if: always()
         uses: mshick/add-pr-comment@v2
         with:
           message: |
