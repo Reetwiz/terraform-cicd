@@ -1,0 +1,50 @@
+# .github/workflows/destroy.yml
+name: 'Terraform Destroy'
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'type "destroy"'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  destroy-infrastructure:
+    name: 'Destroy Infrastructure'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 'Verify Confirmation'
+        run: |
+          if [[ "${{ github.event.inputs.confirmation }}" != "destroy" ]]; then
+            echo "Confirmation text did not match 'destroy'. Aborting."
+            exit 1
+          fi
+
+      - name: 'Checkout main branch'
+        uses: actions/checkout@v4
+        with:
+          ref: 'main'
+
+      - name: 'Configure AWS Credentials'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: 'Setup Terraform'
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.8.3
+
+      - name: 'Terraform Init'
+        run: terraform init
+
+      - name: 'Terraform Destroy'
+        if: github.event.inputs.confirmation == 'destroy'
+        run: terraform destroy -auto-approve
