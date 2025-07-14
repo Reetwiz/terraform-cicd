@@ -1,14 +1,16 @@
 # .github/workflows/cd.yml
 name: 'Terraform CD'
 
+
 on:
   push:
     branches:
       - main
 
+
 permissions:
   contents: write
-  id-token: write # Added for AWS OIDC authentication
+
 
 jobs:
   create-release:
@@ -16,17 +18,19 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       release_version: ${{ steps.get_version.outputs.new_version }}
-      
+     
     steps:
       - name: 'Checkout'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+
       - name: 'Install semver tool'
         run: |
           wget -q -O /usr/local/bin/semver https://raw.githubusercontent.com/fsaintjacques/semver-tool/master/src/semver
           chmod +x /usr/local/bin/semver
+
 
       - name: 'Get Version'
         id: get_version
@@ -44,9 +48,10 @@ jobs:
           echo "new_version=v$new_version" >> $GITHUB_OUTPUT
           echo "New version: v$new_version"
 
+
       - name: 'Build'
         run: zip -r prod-release-artifact.zip *.tf modules/
-          
+         
       - name: 'Release'
         uses: softprops/action-gh-release@v2
         with:
@@ -56,14 +61,18 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 'Configure AWS Credentials with OIDC'
+
+      - name: 'Upload Artifact'
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::702865854817:role/reetwiz-tf-oidc 
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
+
 
       - name: 'Push to S3'
         run: aws s3 cp prod-release-artifact.zip s3://reetwiz-artifact/releases/${{ steps.get_version.outputs.new_version }}/prod-release-artifact.zip
+
 
       - name: 'Summary'
         run: |
@@ -71,3 +80,4 @@ jobs:
           echo "- **Version**: ${{ steps.get_version.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Artifact**: prod-release-artifact.zip" >> $GITHUB_STEP_SUMMARY
           echo "- **S3 Path**: s3://reetwiz-artifact/releases/${{ steps.get_version.outputs.new_version }}/" >> $GITHUB_STEP_SUMMARY
+
